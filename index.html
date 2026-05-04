@@ -12,6 +12,45 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #000; overflow: hidden; font-family: system-ui, sans-serif; }
 
+    /* ── Force MindAR's internal video element to show ── */
+    /* MindAR injects a <video> and a <canvas> into the DOM.
+       These sometimes get hidden or positioned off-screen. */
+    video {
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      object-fit: cover !important;
+      z-index: 0 !important;
+    }
+
+    /* But keep the AR overlay video hidden until triggered */
+    #ar-video {
+      position: static !important;
+      width: 100% !important;
+      height: auto !important;
+      object-fit: unset !important;
+      z-index: auto !important;
+    }
+
+    canvas {
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      z-index: 1 !important;
+    }
+
+    a-scene {
+      position: fixed !important;
+      top: 0; left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 1;
+    }
+
     #start-screen {
       position: fixed;
       inset: 0;
@@ -43,27 +82,43 @@
     #start-btn {
       margin-top: 8px;
       padding: 16px 48px;
-      background: #1D9E75;
-      color: #fff;
+      background: #555;
+      color: rgba(255,255,255,0.4);
       border: none;
       border-radius: 50px;
       font-size: 17px;
       font-weight: 600;
-      cursor: pointer;
+      cursor: not-allowed;
       -webkit-tap-highlight-color: transparent;
+      transition: background 0.3s, color 0.3s;
     }
 
-    #start-btn:disabled {
-      background: #555;
-      cursor: not-allowed;
+    #start-btn.ready {
+      background: #1D9E75;
+      color: #fff;
+      cursor: pointer;
     }
+
+    #start-btn.ready:active { background: #17845f; }
 
     #status-msg {
       color: rgba(255,255,255,0.45);
       font-size: 13px;
       text-align: center;
+      padding: 0 40px;
       min-height: 20px;
     }
+
+    #loader {
+      width: 28px; height: 28px;
+      border: 3px solid rgba(255,255,255,0.1);
+      border-top-color: #1D9E75;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    #loader.hidden { display: none; }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
     #video-overlay {
       position: fixed;
@@ -91,8 +146,6 @@
       background: #000;
     }
 
-    #ar-video { width: 100%; display: block; }
-
     #close-btn {
       margin-top: 20px;
       padding: 13px 36px;
@@ -110,7 +163,7 @@
       bottom: 48px;
       left: 50%;
       transform: translateX(-50%);
-      color: rgba(255,255,255,0.75);
+      color: rgba(255,255,255,0.85);
       font-size: 13px;
       letter-spacing: 0.08em;
       text-transform: uppercase;
@@ -144,8 +197,9 @@
   <div id="start-screen">
     <h1>AR Demo</h1>
     <p>Tap Start — Chrome will ask for<br>camera access. Tap <strong style="color:#fff">Allow</strong> to continue.</p>
-    <button id="start-btn">Start AR</button>
-    <p id="status-msg"></p>
+    <div id="loader"></div>
+    <button id="start-btn" disabled>Loading...</button>
+    <p id="status-msg">Loading AR scripts...</p>
   </div>
 
   <div id="scan-hint">
@@ -171,30 +225,34 @@
     const startScreen = document.getElementById('start-screen');
     const startBtn    = document.getElementById('start-btn');
     const statusMsg   = document.getElementById('status-msg');
+    const loader      = document.getElementById('loader');
     const overlay     = document.getElementById('video-overlay');
     const scanHint    = document.getElementById('scan-hint');
     const closeBtn    = document.getElementById('close-btn');
 
+    window.addEventListener('load', () => {
+      loader.classList.add('hidden');
+      startBtn.textContent = 'Start AR';
+      startBtn.disabled = false;
+      startBtn.classList.add('ready');
+      statusMsg.textContent = 'Ready — tap the button above';
+    });
+
     startBtn.addEventListener('click', async () => {
+      if (!startBtn.classList.contains('ready')) return;
       startBtn.disabled = true;
       statusMsg.textContent = 'Requesting camera access...';
 
       try {
-        // ── Step 1: explicitly call getUserMedia to trigger
-        //    Chrome's native "Allow / Block" camera popup.
-        //    This MUST happen directly inside a user gesture (tap).
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-
-        // Permission granted — stop this stream immediately.
-        // MindAR will open its own camera stream; we just needed
-        // getUserMedia to fire the popup and get the grant.
-        stream.getTracks().forEach(track => track.stop());
+        // Fire getUserMedia to trigger Chrome's permission popup
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' }
+        });
+        stream.getTracks().forEach(t => t.stop());
 
         statusMsg.textContent = 'Camera allowed — loading AR...';
 
-        // ── Step 2: now inject the a-scene into the DOM.
-        //    Because permission is already granted above,
-        //    MindAR's own camera call will succeed silently.
+        // Inject a-scene after permission granted
         const scene = document.createElement('a-scene');
         scene.setAttribute('mindar-image',
           'imageTargetSrc: targets.mind; autoStart: true; uiLoading: yes; uiScanning: no;');
@@ -221,7 +279,6 @@
         scene.appendChild(target);
         document.body.appendChild(scene);
 
-        // Hide start screen once scene is ready
         scene.addEventListener('loaded', () => {
           startScreen.style.display = 'none';
           scanHint.classList.add('visible');
@@ -242,12 +299,12 @@
         });
 
       } catch (err) {
-        // User tapped Block, or camera unavailable
         startBtn.disabled = false;
+        startBtn.classList.add('ready');
         if (err.name === 'NotAllowedError') {
-          statusMsg.textContent = 'Camera access denied. Please allow camera in your browser settings and try again.';
+          statusMsg.textContent = 'Camera blocked. Go to Chrome Settings → Site Settings → Camera and allow this site.';
         } else {
-          statusMsg.textContent = 'Could not access camera: ' + err.message;
+          statusMsg.textContent = 'Camera error: ' + err.message;
         }
       }
     });
