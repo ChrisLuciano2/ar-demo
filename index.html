@@ -5,52 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>AR Demo</title>
 
-  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
-  <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+  <!-- MindAR Three.js build (no A-Frame dependency) -->
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"></script>
+  <!-- Three.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #000; overflow: hidden; font-family: system-ui, sans-serif; }
 
-    /* ── Force MindAR's internal video element to show ── */
-    /* MindAR injects a <video> and a <canvas> into the DOM.
-       These sometimes get hidden or positioned off-screen. */
-    video {
-      position: fixed !important;
-      top: 0 !important;
-      left: 0 !important;
-      width: 100vw !important;
-      height: 100vh !important;
-      object-fit: cover !important;
-      z-index: 0 !important;
-    }
-
-    /* But keep the AR overlay video hidden until triggered */
-    #ar-video {
-      position: static !important;
-      width: 100% !important;
-      height: auto !important;
-      object-fit: unset !important;
-      z-index: auto !important;
-    }
-
-    canvas {
-      position: fixed !important;
-      top: 0 !important;
-      left: 0 !important;
-      width: 100vw !important;
-      height: 100vh !important;
-      z-index: 1 !important;
-    }
-
-    a-scene {
-      position: fixed !important;
-      top: 0; left: 0;
-      width: 100vw;
-      height: 100vh;
-      z-index: 1;
-    }
-
+    /* ── Start screen ───────────────────────────────────────── */
     #start-screen {
       position: fixed;
       inset: 0;
@@ -116,10 +80,21 @@
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
     }
-
     #loader.hidden { display: none; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    /* ── AR canvas fills screen ─────────────────────────────── */
+    #ar-canvas {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      display: none;
+    }
+
+    #ar-canvas.active { display: block; }
+
+    /* ── Video overlay ──────────────────────────────────────── */
     #video-overlay {
       position: fixed;
       inset: 0;
@@ -146,6 +121,8 @@
       background: #000;
     }
 
+    #ar-video { width: 100%; display: block; }
+
     #close-btn {
       margin-top: 20px;
       padding: 13px 36px;
@@ -158,6 +135,7 @@
       -webkit-tap-highlight-color: transparent;
     }
 
+    /* ── Scan hint ──────────────────────────────────────────── */
     #scan-hint {
       position: fixed;
       bottom: 48px;
@@ -194,6 +172,7 @@
 </head>
 <body>
 
+  <!-- Start screen -->
   <div id="start-screen">
     <h1>AR Demo</h1>
     <p>Tap Start — Chrome will ask for<br>camera access. Tap <strong style="color:#fff">Allow</strong> to continue.</p>
@@ -202,11 +181,16 @@
     <p id="status-msg">Loading AR scripts...</p>
   </div>
 
+  <!-- Canvas that MindAR Three.js renders into -->
+  <canvas id="ar-canvas"></canvas>
+
+  <!-- Scan hint -->
   <div id="scan-hint">
     <span class="dot"></span>
     Point camera at target
   </div>
 
+  <!-- Video overlay -->
   <div id="video-overlay">
     <div id="video-container">
       <video
@@ -226,10 +210,13 @@
     const startBtn    = document.getElementById('start-btn');
     const statusMsg   = document.getElementById('status-msg');
     const loader      = document.getElementById('loader');
+    const arCanvas    = document.getElementById('ar-canvas');
     const overlay     = document.getElementById('video-overlay');
     const scanHint    = document.getElementById('scan-hint');
     const closeBtn    = document.getElementById('close-btn');
+    const arVideo     = document.getElementById('ar-video');
 
+    // Enable button once all scripts loaded
     window.addEventListener('load', () => {
       loader.classList.add('hidden');
       startBtn.textContent = 'Start AR';
@@ -244,76 +231,69 @@
       statusMsg.textContent = 'Requesting camera access...';
 
       try {
-        // Fire getUserMedia to trigger Chrome's permission popup
+        // Step 1 — trigger Chrome's camera permission popup
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'environment' }
         });
         stream.getTracks().forEach(t => t.stop());
 
-        statusMsg.textContent = 'Camera allowed — loading AR...';
+        statusMsg.textContent = 'Starting AR...';
 
-        // Inject a-scene after permission granted
-        const scene = document.createElement('a-scene');
-        scene.setAttribute('mindar-image',
-          'imageTargetSrc: targets.mind; autoStart: true; uiLoading: yes; uiScanning: no;');
-        scene.setAttribute('color-space', 'sRGB');
-        scene.setAttribute('renderer', 'colorManagement: true; physicallyCorrectLights: true');
-        scene.setAttribute('vr-mode-ui', 'enabled: false');
-        scene.setAttribute('device-orientation-permission-ui', 'enabled: false');
+        // Step 2 — show canvas
+        arCanvas.classList.add('active');
 
-        const camera = document.createElement('a-camera');
-        camera.setAttribute('position', '0 0 0');
-        camera.setAttribute('look-controls', 'enabled: false');
-        scene.appendChild(camera);
+        // Step 3 — init MindAR with Three.js directly
+        const mindarThree = new window.MINDAR.IMAGE.MindARThree({
+          container: document.body,
+          imageTargetSrc: 'targets.mind',
+          uiLoading: 'yes',
+          uiScanning: 'no',
+        });
 
-        const target = document.createElement('a-entity');
-        target.setAttribute('mindar-image-target', 'targetIndex: 0');
-        target.id = 'ar-target';
+        const { renderer, scene, camera } = mindarThree;
 
-        const plane = document.createElement('a-plane');
-        plane.setAttribute('position', '0 0 0');
-        plane.setAttribute('width', '1');
-        plane.setAttribute('height', '1');
-        plane.setAttribute('material', 'opacity: 0; transparent: true');
-        target.appendChild(plane);
-        scene.appendChild(target);
-        document.body.appendChild(scene);
+        // Add an anchor for target index 0
+        const anchor = mindarThree.addAnchor(0);
 
-        scene.addEventListener('loaded', () => {
-          startScreen.style.display = 'none';
-          scanHint.classList.add('visible');
+        anchor.onTargetFound = () => {
+          scanHint.classList.add('hidden');
+          overlay.classList.add('visible');
+          arVideo.currentTime = 0;
+          arVideo.play().catch(() => {});
+        };
 
-          const arTarget = document.getElementById('ar-target');
-          const video    = document.getElementById('ar-video');
+        anchor.onTargetLost = () => {
+          arVideo.pause();
+        };
 
-          arTarget.addEventListener('targetFound', () => {
-            scanHint.classList.add('hidden');
-            overlay.classList.add('visible');
-            video.currentTime = 0;
-            video.play().catch(() => {});
-          });
+        // Start MindAR — this opens the camera and begins tracking
+        await mindarThree.start();
 
-          arTarget.addEventListener('targetLost', () => {
-            video.pause();
-          });
+        // Hide start screen
+        startScreen.style.display = 'none';
+        scanHint.classList.add('visible');
+
+        // Render loop
+        renderer.setAnimationLoop(() => {
+          renderer.render(scene, camera);
         });
 
       } catch (err) {
         startBtn.disabled = false;
         startBtn.classList.add('ready');
+        arCanvas.classList.remove('active');
         if (err.name === 'NotAllowedError') {
           statusMsg.textContent = 'Camera blocked. Go to Chrome Settings → Site Settings → Camera and allow this site.';
         } else {
-          statusMsg.textContent = 'Camera error: ' + err.message;
+          statusMsg.textContent = 'Error: ' + err.message;
         }
       }
     });
 
     closeBtn.addEventListener('click', () => {
-      const video = document.getElementById('ar-video');
       overlay.classList.remove('visible');
-      video.pause();
-      video.currentTime = 0;
+      arVideo.pause();
+      arVideo.currentTime = 0;
       scanHint.classList.remove('hidden');
     });
   </script>
