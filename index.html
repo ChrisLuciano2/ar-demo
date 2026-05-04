@@ -4,14 +4,14 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>AR Demo</title>
- 
+
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
   <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
- 
+
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #000; overflow: hidden; font-family: system-ui, sans-serif; }
- 
+
     /* ── Start screen ───────────────────────────────────────── */
     #start-screen {
       position: fixed;
@@ -24,16 +24,15 @@
       gap: 24px;
       z-index: 9999;
     }
- 
+
     #start-screen h1 {
       color: #fff;
       font-size: 22px;
       font-weight: 600;
-      letter-spacing: 0.02em;
       text-align: center;
       padding: 0 32px;
     }
- 
+
     #start-screen p {
       color: rgba(255,255,255,0.5);
       font-size: 14px;
@@ -41,7 +40,7 @@
       padding: 0 40px;
       line-height: 1.6;
     }
- 
+
     #start-btn {
       margin-top: 8px;
       padding: 16px 48px;
@@ -51,27 +50,12 @@
       border-radius: 50px;
       font-size: 17px;
       font-weight: 600;
-      letter-spacing: 0.03em;
       cursor: pointer;
       -webkit-tap-highlight-color: transparent;
     }
- 
+
     #start-btn:active { background: #17845f; }
- 
-    /* ── AR scene ───────────────────────────────────────────── */
-    #ar-container {
-      display: none;
-      width: 100vw;
-      height: 100vh;
-    }
- 
-    #ar-container.active { display: block; }
- 
-    a-scene {
-      width: 100vw;
-      height: 100vh;
-    }
- 
+
     /* ── Video overlay ──────────────────────────────────────── */
     #video-overlay {
       position: fixed;
@@ -88,12 +72,12 @@
       pointer-events: none;
       transition: opacity 0.3s ease;
     }
- 
+
     #video-overlay.visible {
       opacity: 1;
       pointer-events: all;
     }
- 
+
     #video-container {
       width: min(92vw, 560px);
       border-radius: 16px;
@@ -101,12 +85,12 @@
       box-shadow: 0 24px 80px rgba(0,0,0,0.6);
       background: #000;
     }
- 
+
     #ar-video {
       width: 100%;
       display: block;
     }
- 
+
     #close-btn {
       margin-top: 20px;
       padding: 13px 36px;
@@ -118,9 +102,7 @@
       cursor: pointer;
       -webkit-tap-highlight-color: transparent;
     }
- 
-    #close-btn:active { background: rgba(255,255,255,0.22); }
- 
+
     /* ── Scanning hint ──────────────────────────────────────── */
     #scan-hint {
       position: fixed;
@@ -136,18 +118,20 @@
       gap: 10px;
       z-index: 100;
       white-space: nowrap;
+      opacity: 0;
       transition: opacity 0.3s;
     }
- 
-    #scan-hint.hidden { opacity: 0; pointer-events: none; }
- 
+
+    #scan-hint.visible { opacity: 1; }
+    #scan-hint.hidden  { opacity: 0; pointer-events: none; }
+
     .dot {
       width: 9px; height: 9px;
       border-radius: 50%;
       background: #1D9E75;
       animation: pulse 1.5s ease-in-out infinite;
     }
- 
+
     @keyframes pulse {
       0%, 100% { opacity: 1; transform: scale(1); }
       50%       { opacity: 0.3; transform: scale(0.55); }
@@ -155,93 +139,105 @@
   </style>
 </head>
 <body>
- 
-  <!-- ── Start screen ──────────────────────────────────────────── -->
+
+  <!-- Start screen — a-scene does NOT exist in the DOM yet -->
   <div id="start-screen">
     <h1>AR Demo</h1>
-    <p>Tap the button below to start.<br>Your browser will ask for camera access — tap Allow.</p>
+    <p>Tap Start — your browser will ask for<br>camera access. Tap <strong style="color:#fff">Allow</strong> to continue.</p>
     <button id="start-btn">Start AR</button>
   </div>
- 
-  <!-- ── AR container (hidden until started) ──────────────────── -->
-  <div id="ar-container">
- 
-    <div id="scan-hint">
-      <span class="dot"></span>
-      Point camera at target
-    </div>
- 
-    <div id="video-overlay">
-      <div id="video-container">
-        <video
-          id="ar-video"
-          src="video.mp4"
-          playsinline
-          webkit-playsinline
-          controls
-          preload="metadata"
-        ></video>
-      </div>
-      <button id="close-btn">✕ &nbsp; Close</button>
-    </div>
- 
-    <a-scene
-      mindar-image="imageTargetSrc: targets.mind; autoStart: true; uiLoading: yes; uiScanning: no;"
-      color-space="sRGB"
-      renderer="colorManagement: true; physicallyCorrectLights: true"
-      vr-mode-ui="enabled: false"
-      device-orientation-permission-ui="enabled: false"
-    >
-      <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
- 
-      <a-entity mindar-image-target="targetIndex: 0" id="ar-target">
-        <a-plane
-          position="0 0 0"
-          width="1" height="1"
-          material="opacity: 0; transparent: true"
-        ></a-plane>
-      </a-entity>
-    </a-scene>
- 
+
+  <!-- Scanning hint (shown after scene loads) -->
+  <div id="scan-hint">
+    <span class="dot"></span>
+    Point camera at target
   </div>
- 
+
+  <!-- Video overlay -->
+  <div id="video-overlay">
+    <div id="video-container">
+      <video
+        id="ar-video"
+        src="video.mp4"
+        playsinline
+        webkit-playsinline
+        controls
+        preload="metadata"
+      ></video>
+    </div>
+    <button id="close-btn">✕ &nbsp; Close</button>
+  </div>
+
   <script>
     const startScreen = document.getElementById('start-screen');
-    const arContainer = document.getElementById('ar-container');
-    const startBtn    = document.getElementById('start-btn');
     const overlay     = document.getElementById('video-overlay');
-    const video       = document.getElementById('ar-video');
-    const closeBtn    = document.getElementById('close-btn');
     const scanHint    = document.getElementById('scan-hint');
-    const arTarget    = document.getElementById('ar-target');
- 
-    // Tap Start → reveal AR scene, triggers camera permission prompt
+    const closeBtn    = document.getElementById('close-btn');
+    const startBtn    = document.getElementById('start-btn');
+
     startBtn.addEventListener('click', () => {
+      // Hide start screen
       startScreen.style.display = 'none';
-      arContainer.classList.add('active');
+
+      // ── Dynamically inject the a-scene AFTER the user tap ──
+      // This guarantees the camera permission prompt fires as
+      // a direct result of the gesture — Chrome always shows it.
+      const scene = document.createElement('a-scene');
+      scene.setAttribute('mindar-image',
+        'imageTargetSrc: targets.mind; autoStart: true; uiLoading: yes; uiScanning: no;');
+      scene.setAttribute('color-space', 'sRGB');
+      scene.setAttribute('renderer', 'colorManagement: true; physicallyCorrectLights: true');
+      scene.setAttribute('vr-mode-ui', 'enabled: false');
+      scene.setAttribute('device-orientation-permission-ui', 'enabled: false');
+
+      const camera = document.createElement('a-camera');
+      camera.setAttribute('position', '0 0 0');
+      camera.setAttribute('look-controls', 'enabled: false');
+      scene.appendChild(camera);
+
+      const target = document.createElement('a-entity');
+      target.setAttribute('mindar-image-target', 'targetIndex: 0');
+      target.id = 'ar-target';
+
+      const plane = document.createElement('a-plane');
+      plane.setAttribute('position', '0 0 0');
+      plane.setAttribute('width', '1');
+      plane.setAttribute('height', '1');
+      plane.setAttribute('material', 'opacity: 0; transparent: true');
+      target.appendChild(plane);
+
+      scene.appendChild(target);
+      document.body.appendChild(scene);
+
+      // Wait for scene to be ready then wire up events
+      scene.addEventListener('loaded', () => {
+        scanHint.classList.add('visible');
+
+        const arTarget = document.getElementById('ar-target');
+        const video    = document.getElementById('ar-video');
+
+        arTarget.addEventListener('targetFound', () => {
+          scanHint.classList.add('hidden');
+          overlay.classList.add('visible');
+          video.currentTime = 0;
+          video.play().catch(() => {});
+        });
+
+        arTarget.addEventListener('targetLost', () => {
+          video.pause();
+        });
+      });
     });
- 
-    // Target found → show video overlay
-    arTarget.addEventListener('targetFound', () => {
-      scanHint.classList.add('hidden');
-      overlay.classList.add('visible');
-      video.currentTime = 0;
-      video.play().catch(() => {});
-    });
- 
-    // Target lost → pause video
-    arTarget.addEventListener('targetLost', () => {
-      video.pause();
-    });
- 
+
     // Close button
     closeBtn.addEventListener('click', () => {
+      const video = document.getElementById('ar-video');
       overlay.classList.remove('visible');
       video.pause();
       video.currentTime = 0;
       scanHint.classList.remove('hidden');
     });
   </script>
- 
+
 </body>
 </html>
