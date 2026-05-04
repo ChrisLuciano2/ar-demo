@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>AR Demo</title>
 
-  <!-- Correct versions: A-Frame 1.6.0 + MindAR 1.2.5 -->
   <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 
@@ -56,12 +55,7 @@
       transition: background 0.3s, color 0.3s;
     }
 
-    #start-btn.ready {
-      background: #1D9E75;
-      color: #fff;
-      cursor: pointer;
-    }
-
+    #start-btn.ready { background: #1D9E75; color: #fff; cursor: pointer; }
     #start-btn.ready:active { background: #17845f; }
 
     #status-msg {
@@ -81,6 +75,40 @@
     }
     #loader.hidden { display: none; }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Debug bar ──────────────────────────────────────────── */
+    #debug-bar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      padding: 10px 16px;
+      background: rgba(0,0,0,0.7);
+      color: #fff;
+      font-size: 13px;
+      z-index: 500;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    #debug-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: #888;
+      flex-shrink: 0;
+      transition: background 0.2s;
+    }
+
+    #debug-dot.scanning  { background: #f5a623; animation: pulse 1.2s ease-in-out infinite; }
+    #debug-dot.found     { background: #1D9E75; animation: none; }
+
+    #debug-text { flex: 1; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
 
     /* ── Video overlay ──────────────────────────────────────── */
     #video-overlay {
@@ -149,10 +177,10 @@
       width: 9px; height: 9px;
       border-radius: 50%;
       background: #1D9E75;
-      animation: pulse 1.5s ease-in-out infinite;
+      animation: blink 1.5s ease-in-out infinite;
     }
 
-    @keyframes pulse {
+    @keyframes blink {
       0%, 100% { opacity: 1; transform: scale(1); }
       50%       { opacity: 0.3; transform: scale(0.55); }
     }
@@ -167,6 +195,12 @@
     <div id="loader"></div>
     <button id="start-btn" disabled>Loading...</button>
     <p id="status-msg">Loading AR scripts...</p>
+  </div>
+
+  <!-- Debug bar — always visible after AR starts -->
+  <div id="debug-bar" style="display:none;">
+    <div id="debug-dot"></div>
+    <span id="debug-text">Initializing...</span>
   </div>
 
   <!-- Scan hint -->
@@ -199,8 +233,15 @@
     const scanHint    = document.getElementById('scan-hint');
     const closeBtn    = document.getElementById('close-btn');
     const arVideo     = document.getElementById('ar-video');
+    const debugBar    = document.getElementById('debug-bar');
+    const debugDot    = document.getElementById('debug-dot');
+    const debugText   = document.getElementById('debug-text');
 
-    // Enable button once all scripts are loaded
+    function setDebug(state, message) {
+      debugDot.className = state; // 'scanning' | 'found' | ''
+      debugText.textContent = message;
+    }
+
     window.addEventListener('load', () => {
       loader.classList.add('hidden');
       startBtn.textContent = 'Start AR';
@@ -215,7 +256,6 @@
       statusMsg.textContent = 'Requesting camera access...';
 
       try {
-        // Explicitly call getUserMedia to fire Chrome's permission popup
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'environment' }
         });
@@ -223,7 +263,6 @@
 
         statusMsg.textContent = 'Starting AR...';
 
-        // Build and inject the a-scene after permission is granted
         const scene = document.createElement('a-scene');
         scene.setAttribute('mindar-image',
           'imageTargetSrc: targets.mind; autoStart: true; uiLoading: yes; uiScanning: no;');
@@ -250,14 +289,16 @@
         scene.appendChild(target);
         document.body.appendChild(scene);
 
-        // Once scene is ready, hide start screen and wire up target events
         scene.addEventListener('loaded', () => {
           startScreen.style.display = 'none';
           scanHint.classList.add('visible');
+          debugBar.style.display = 'flex';
+          setDebug('scanning', 'Scanning — point camera at your target');
 
           const arTarget = document.getElementById('ar-target');
 
           arTarget.addEventListener('targetFound', () => {
+            setDebug('found', '✓ Target found!');
             scanHint.classList.add('hidden');
             overlay.classList.add('visible');
             arVideo.currentTime = 0;
@@ -265,6 +306,7 @@
           });
 
           arTarget.addEventListener('targetLost', () => {
+            setDebug('scanning', 'Target lost — keep scanning...');
             arVideo.pause();
           });
         });
@@ -285,6 +327,7 @@
       arVideo.pause();
       arVideo.currentTime = 0;
       scanHint.classList.remove('hidden');
+      setDebug('scanning', 'Scanning — point camera at your target');
     });
   </script>
 
