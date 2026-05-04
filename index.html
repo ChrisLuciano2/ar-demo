@@ -12,7 +12,6 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #000; overflow: hidden; font-family: system-ui, sans-serif; }
 
-    /* ── Start screen ───────────────────────────────────────── */
     #start-screen {
       position: fixed;
       inset: 0;
@@ -54,9 +53,18 @@
       -webkit-tap-highlight-color: transparent;
     }
 
-    #start-btn:active { background: #17845f; }
+    #start-btn:disabled {
+      background: #555;
+      cursor: not-allowed;
+    }
 
-    /* ── Video overlay ──────────────────────────────────────── */
+    #status-msg {
+      color: rgba(255,255,255,0.45);
+      font-size: 13px;
+      text-align: center;
+      min-height: 20px;
+    }
+
     #video-overlay {
       position: fixed;
       inset: 0;
@@ -73,10 +81,7 @@
       transition: opacity 0.3s ease;
     }
 
-    #video-overlay.visible {
-      opacity: 1;
-      pointer-events: all;
-    }
+    #video-overlay.visible { opacity: 1; pointer-events: all; }
 
     #video-container {
       width: min(92vw, 560px);
@@ -86,10 +91,7 @@
       background: #000;
     }
 
-    #ar-video {
-      width: 100%;
-      display: block;
-    }
+    #ar-video { width: 100%; display: block; }
 
     #close-btn {
       margin-top: 20px;
@@ -103,7 +105,6 @@
       -webkit-tap-highlight-color: transparent;
     }
 
-    /* ── Scanning hint ──────────────────────────────────────── */
     #scan-hint {
       position: fixed;
       bottom: 48px;
@@ -140,20 +141,18 @@
 </head>
 <body>
 
-  <!-- Start screen — a-scene does NOT exist in the DOM yet -->
   <div id="start-screen">
     <h1>AR Demo</h1>
-    <p>Tap Start — your browser will ask for<br>camera access. Tap <strong style="color:#fff">Allow</strong> to continue.</p>
+    <p>Tap Start — Chrome will ask for<br>camera access. Tap <strong style="color:#fff">Allow</strong> to continue.</p>
     <button id="start-btn">Start AR</button>
+    <p id="status-msg"></p>
   </div>
 
-  <!-- Scanning hint (shown after scene loads) -->
   <div id="scan-hint">
     <span class="dot"></span>
     Point camera at target
   </div>
 
-  <!-- Video overlay -->
   <div id="video-overlay">
     <div id="video-container">
       <video
@@ -170,66 +169,89 @@
 
   <script>
     const startScreen = document.getElementById('start-screen');
+    const startBtn    = document.getElementById('start-btn');
+    const statusMsg   = document.getElementById('status-msg');
     const overlay     = document.getElementById('video-overlay');
     const scanHint    = document.getElementById('scan-hint');
     const closeBtn    = document.getElementById('close-btn');
-    const startBtn    = document.getElementById('start-btn');
 
-    startBtn.addEventListener('click', () => {
-      // Hide start screen
-      startScreen.style.display = 'none';
+    startBtn.addEventListener('click', async () => {
+      startBtn.disabled = true;
+      statusMsg.textContent = 'Requesting camera access...';
 
-      // ── Dynamically inject the a-scene AFTER the user tap ──
-      // This guarantees the camera permission prompt fires as
-      // a direct result of the gesture — Chrome always shows it.
-      const scene = document.createElement('a-scene');
-      scene.setAttribute('mindar-image',
-        'imageTargetSrc: targets.mind; autoStart: true; uiLoading: yes; uiScanning: no;');
-      scene.setAttribute('color-space', 'sRGB');
-      scene.setAttribute('renderer', 'colorManagement: true; physicallyCorrectLights: true');
-      scene.setAttribute('vr-mode-ui', 'enabled: false');
-      scene.setAttribute('device-orientation-permission-ui', 'enabled: false');
+      try {
+        // ── Step 1: explicitly call getUserMedia to trigger
+        //    Chrome's native "Allow / Block" camera popup.
+        //    This MUST happen directly inside a user gesture (tap).
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
 
-      const camera = document.createElement('a-camera');
-      camera.setAttribute('position', '0 0 0');
-      camera.setAttribute('look-controls', 'enabled: false');
-      scene.appendChild(camera);
+        // Permission granted — stop this stream immediately.
+        // MindAR will open its own camera stream; we just needed
+        // getUserMedia to fire the popup and get the grant.
+        stream.getTracks().forEach(track => track.stop());
 
-      const target = document.createElement('a-entity');
-      target.setAttribute('mindar-image-target', 'targetIndex: 0');
-      target.id = 'ar-target';
+        statusMsg.textContent = 'Camera allowed — loading AR...';
 
-      const plane = document.createElement('a-plane');
-      plane.setAttribute('position', '0 0 0');
-      plane.setAttribute('width', '1');
-      plane.setAttribute('height', '1');
-      plane.setAttribute('material', 'opacity: 0; transparent: true');
-      target.appendChild(plane);
+        // ── Step 2: now inject the a-scene into the DOM.
+        //    Because permission is already granted above,
+        //    MindAR's own camera call will succeed silently.
+        const scene = document.createElement('a-scene');
+        scene.setAttribute('mindar-image',
+          'imageTargetSrc: targets.mind; autoStart: true; uiLoading: yes; uiScanning: no;');
+        scene.setAttribute('color-space', 'sRGB');
+        scene.setAttribute('renderer', 'colorManagement: true; physicallyCorrectLights: true');
+        scene.setAttribute('vr-mode-ui', 'enabled: false');
+        scene.setAttribute('device-orientation-permission-ui', 'enabled: false');
 
-      scene.appendChild(target);
-      document.body.appendChild(scene);
+        const camera = document.createElement('a-camera');
+        camera.setAttribute('position', '0 0 0');
+        camera.setAttribute('look-controls', 'enabled: false');
+        scene.appendChild(camera);
 
-      // Wait for scene to be ready then wire up events
-      scene.addEventListener('loaded', () => {
-        scanHint.classList.add('visible');
+        const target = document.createElement('a-entity');
+        target.setAttribute('mindar-image-target', 'targetIndex: 0');
+        target.id = 'ar-target';
 
-        const arTarget = document.getElementById('ar-target');
-        const video    = document.getElementById('ar-video');
+        const plane = document.createElement('a-plane');
+        plane.setAttribute('position', '0 0 0');
+        plane.setAttribute('width', '1');
+        plane.setAttribute('height', '1');
+        plane.setAttribute('material', 'opacity: 0; transparent: true');
+        target.appendChild(plane);
+        scene.appendChild(target);
+        document.body.appendChild(scene);
 
-        arTarget.addEventListener('targetFound', () => {
-          scanHint.classList.add('hidden');
-          overlay.classList.add('visible');
-          video.currentTime = 0;
-          video.play().catch(() => {});
+        // Hide start screen once scene is ready
+        scene.addEventListener('loaded', () => {
+          startScreen.style.display = 'none';
+          scanHint.classList.add('visible');
+
+          const arTarget = document.getElementById('ar-target');
+          const video    = document.getElementById('ar-video');
+
+          arTarget.addEventListener('targetFound', () => {
+            scanHint.classList.add('hidden');
+            overlay.classList.add('visible');
+            video.currentTime = 0;
+            video.play().catch(() => {});
+          });
+
+          arTarget.addEventListener('targetLost', () => {
+            video.pause();
+          });
         });
 
-        arTarget.addEventListener('targetLost', () => {
-          video.pause();
-        });
-      });
+      } catch (err) {
+        // User tapped Block, or camera unavailable
+        startBtn.disabled = false;
+        if (err.name === 'NotAllowedError') {
+          statusMsg.textContent = 'Camera access denied. Please allow camera in your browser settings and try again.';
+        } else {
+          statusMsg.textContent = 'Could not access camera: ' + err.message;
+        }
+      }
     });
 
-    // Close button
     closeBtn.addEventListener('click', () => {
       const video = document.getElementById('ar-video');
       overlay.classList.remove('visible');
