@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>AR Demo</title>
+
+  <!-- MindAR + A-Frame -->
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+  <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #000;
+      overflow: hidden;
+      font-family: system-ui, sans-serif;
+    }
+
+    /* MindAR renders its own canvas — make sure it fills the screen */
+    a-scene {
+      width: 100vw;
+      height: 100vh;
+    }
+
+    /* ── Video overlay panel ───────────────────────────────────── */
+    #video-overlay {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.72);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      z-index: 999;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.35s ease;
+    }
+
+    #video-overlay.visible {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    #video-container {
+      position: relative;
+      width: min(92vw, 560px);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+      background: #000;
+    }
+
+    #ar-video {
+      width: 100%;
+      display: block;
+      border-radius: 16px;
+    }
+
+    /* close button */
+    #close-btn {
+      margin-top: 20px;
+      padding: 12px 32px;
+      background: rgba(255,255,255,0.12);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 50px;
+      font-size: 15px;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    #close-btn:hover {
+      background: rgba(255,255,255,0.22);
+    }
+
+    /* ── Scanning indicator ────────────────────────────────────── */
+    #scan-hint {
+      position: fixed;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: rgba(255,255,255,0.75);
+      font-size: 14px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      z-index: 100;
+      transition: opacity 0.4s;
+    }
+
+    #scan-hint.hidden { opacity: 0; pointer-events: none; }
+
+    .pulse-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #fff;
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.3; transform: scale(0.6); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Scanning hint ─────────────────────────────────────────── -->
+  <div id="scan-hint">
+    <span class="pulse-dot"></span>
+    Point camera at target
+  </div>
+
+  <!-- ── Video overlay ─────────────────────────────────────────── -->
+  <div id="video-overlay">
+    <div id="video-container">
+      <!--
+        SWAP THIS: replace "video.mp4" with your actual video filename.
+        The file should sit in the same folder as this index.html.
+      -->
+      <video
+        id="ar-video"
+        src="video.mp4"
+        playsinline
+        webkit-playsinline
+        controls
+        preload="metadata"
+      ></video>
+    </div>
+    <button id="close-btn">✕ &nbsp; Close</button>
+  </div>
+
+  <!-- ── MindAR A-Frame scene ──────────────────────────────────── -->
+  <!--
+    SWAP THIS: replace "targets.mind" with your compiled .mind filename.
+    The file should sit in the same folder as this index.html.
+  -->
+  <a-scene
+    mindar-image="imageTargetSrc: targets.mind; autoStart: true; uiLoading: yes; uiScanning: no;"
+    color-space="sRGB"
+    renderer="colorManagement: true; physicallyCorrectLights: true"
+    vr-mode-ui="enabled: false"
+    device-orientation-permission-ui="enabled: false"
+  >
+    <a-camera position="0 0 0" look-controls="enabled: false" cursor="fuse: false"></a-camera>
+
+    <!--
+      This entity listens for the target being found/lost.
+      It renders a small invisible plane just so MindAR has
+      something to anchor to — the real content is the HTML overlay.
+    -->
+    <a-entity mindar-image-target="targetIndex: 0" id="ar-target">
+      <a-plane
+        position="0 0 0"
+        width="1" height="1"
+        material="opacity: 0; transparent: true"
+      ></a-plane>
+    </a-entity>
+  </a-scene>
+
+  <script>
+    const overlay   = document.getElementById('video-overlay');
+    const video     = document.getElementById('ar-video');
+    const closeBtn  = document.getElementById('close-btn');
+    const scanHint  = document.getElementById('scan-hint');
+    const arTarget  = document.getElementById('ar-target');
+
+    // ── Target found → show video ──────────────────────────────
+    arTarget.addEventListener('targetFound', () => {
+      scanHint.classList.add('hidden');
+      overlay.classList.add('visible');
+      video.currentTime = 0;
+      // iOS requires a user-gesture to autoplay — the targetFound
+      // event counts as one, so this works on both iOS and Android.
+      video.play().catch(() => {
+        // If autoplay is blocked, the controls let the user tap play manually
+      });
+    });
+
+    // ── Target lost → pause but keep overlay open ──────────────
+    // (comment this out if you want the video to keep playing when
+    //  the camera moves away)
+    arTarget.addEventListener('targetLost', () => {
+      video.pause();
+    });
+
+    // ── Close button ───────────────────────────────────────────
+    closeBtn.addEventListener('click', () => {
+      overlay.classList.remove('visible');
+      video.pause();
+      video.currentTime = 0;
+      scanHint.classList.remove('hidden');
+    });
+  </script>
+
+</body>
+</html>
